@@ -41,7 +41,7 @@ MPU6050 accelgyro;
 //MPU6050 accelgyro(0x69); // <-- use for AD0 high
 
 // Vars for intital raw values
-int16_t gx, gy, gz;
+int16_t gx, gy, gz, ax, ay, az;
 
 #define OUTPUT_READABLE_ACCELGYRO
 
@@ -55,9 +55,9 @@ int16_t gx, gy, gz;
 #define DEBUG_PRINTLN(x)
 #endif
 
-#define USE_GYRO 3
+#define USE_GYRO_ACCEL 6
 // #define LED_PIN 4
-// #define BUTTON_PIN 
+// #define BUTTON_PIN
 
 // Change this to be the correct button pinout when we know which one it will be
 const int buttonPin = 3;
@@ -66,17 +66,22 @@ const int ledPin = 4;
 // Number of readings that are averaged out to become one data point (Scale w/ available dynamic memory allocation)
 const int numReadings = 25;
 
-#if defined(USE_GYRO)
-const int numAxis = USE_GYRO;
-const int GX = 0;
-const int GY = 1;
-const int GZ = 2;
-#endif
+const int numAxis = USE_GYRO_ACCEL;
+const int AY = 0;
+const int GX = 1;
+const int GY = 2;
+const int GZ = 3;
+
 
 int32_t readings[numAxis][numReadings];  // the reading history
 int32_t readIndex[numAxis];              // the index of the current reading
 int32_t total[numAxis];                  // the running total
 int32_t average[numAxis];                // the average
+
+// Define the timeout duration in milliseconds
+const unsigned long positionTimeout = 250;  // 500 milliseconds
+
+unsigned long positionTimerStart = 0;
 
 
 void setup() {
@@ -125,48 +130,38 @@ void setup() {
 
 void loop() {
   // read raw gyro measurements from device
-  accelgyro.getRotation(&gx, &gy, &gz);
+  accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
 
-  // Calls smoothing function for each gyro axis
-#ifdef USE_GYRO
+  // Calls smoothing function for each necessary axis
+  smooth(AY, ay);
   smooth(GX, gx);
   smooth(GY, gy);
   smooth(GZ, gz);
-#endif
 
-
-  // if (inCorrectPosition()) {  // Checks for device stability
-  //   digitalWrite(ledPin, HIGH); // Turns on LED if stable
-  //   Serial.println("\tLED ON");  // Add this line for debugging
-  // } else {
-  //   digitalWrite(ledPin, LOW);  //Turns off LED if not stable
-  //   Serial.println("\tLED OFF");  // Add this line for debugging
-  // }
-
-
-
-//Method to be implemented once other parts are available for use (peizo switch, etc..)
   if (inCorrectPosition()) {
-
     if (digitalRead(buttonPin) == HIGH) {
-
-        //switch is pressed
-        //insert code here for activation of the butane and spark
-
-      digitalWrite(ledPin, HIGH);
-      Serial.println("\tLED ON");
+      // If the button is pressed and the device is in the correct position
+      // Turn on the LED and start/restart the timer
+      if (millis() - positionTimerStart >= positionTimeout) {
+        digitalWrite(ledPin, HIGH);
+        Serial.println("\tLED ON");
+      }
     } else {
+      // If the button is not pressed, turn off the LED
       digitalWrite(ledPin, LOW);
-      // Serial.println("\tLED OFF");
+      Serial.println("\tLED OFF");
+      // Reset the timer when the device goes out of the correct position
+      positionTimerStart = millis();
     }
   } else {
+    // If the device is not in the correct position, turn off the LED
     digitalWrite(ledPin, LOW);
-    // Serial.println("\tLED OFF");
+    Serial.println("\tLED OFF");
+    // Reset the timer when the device goes out of the correct position
+    positionTimerStart = millis();
   }
 
-
-
-
+// //DEBUGGING STATEMENTS
 #ifdef OUTPUT_READABLE_ACCELGYRO
   // display tab-separated gyro x/y/z values
   DEBUG_PRINT("GX:");
@@ -181,12 +176,19 @@ void loop() {
   DEBUG_PRINT(average[GZ]);
   DEBUG_PRINT("\t");
 
+  DEBUG_PRINT("AY:");
+  DEBUG_PRINT(average[AY]);
+  DEBUG_PRINT("\t");
 #endif
 }
 
 // Bool method to make conditional statement easier to read
+// Values based on sensitivity and height of MPU in relation to arm at side. Acute elbow angle
 bool inCorrectPosition() {
-  return (average[GY] >= -5000 && average[GY] <= 5000 && average[GX] >= -5000 && average[GX] <= 5000 && average[GZ] >= -5000 && average[GZ] <= 5000);
+  return (average[GY] >= -5000 && average[GY] <= 5000 
+  && average[GX] >= -5000 && average[GX] <= 5000 
+  && average[GZ] >= -5000 && average[GZ] <= 5000
+  && average[AY] >= 5000);
 }
 
 // Method for smoothing out raw gyro/accel values and averaging them over a given number of readings
