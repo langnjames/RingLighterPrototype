@@ -61,10 +61,16 @@ int16_t gx, gy, gz, ax, ay, az;
 
 // Change this to be the correct button pinout when we know which one it will be
 const int buttonPin = 3;
-const int ledPin = 4;
+const int ledPin = 13;
 
 // Number of readings that are averaged out to become one data point (Scale w/ available dynamic memory allocation)
-const int numReadings = 25;
+const int numReadings = 500;
+
+// Reading switch/button status
+int switchState = 0;
+
+// bool for while loop if switch is on
+bool switchIsOn;
 
 const int numAxis = USE_GYRO_ACCEL;
 const int AY = 0;
@@ -80,7 +86,9 @@ int32_t average[numAxis];                // the average
 
 // Define the timeout duration in milliseconds
 const unsigned long positionTimeout = 250;  // 500 milliseconds
+const unsigned long switchMaxTime = 9500;  // Max time switch can be activated for 
 
+unsigned long switchTimerStart = 0;
 unsigned long positionTimerStart = 0;
 
 
@@ -129,6 +137,8 @@ void setup() {
 
 
 void loop() {
+  digitalWrite(ledPin, LOW);
+  Serial.println("\tLED OFF");
   // read raw gyro measurements from device
   accelgyro.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
 
@@ -139,27 +149,36 @@ void loop() {
   smooth(GZ, gz);
 
   if (inCorrectPosition()) {
-    if (digitalRead(buttonPin) == HIGH) {
-      // If the button is pressed and the device is in the correct position
-      // Turn on the LED and start/restart the timer
-      if (millis() - positionTimerStart >= positionTimeout) {
+
+    //get Current Accelerometer readings
+
+    // start reading for switch on
+    readSwitch();
+
+    if (isSwitchOn() && millis() - positionTimerStart >= positionTimeout) {
+      switchIsOn = !switchIsOn;
+      switchTimerStart = millis();
+    } else {
+      // Reset the timer when the device goes out of the correct position & button was not pressed within time
+        positionTimerStart = millis();
+    }
+    // continue led high while switchStatus HIGH
+    while (switchIsOn) {
+    // Turn Switch off if switchTimer extends past 10 seconds
+      if (millis() - switchTimerStart >= switchMaxTime) {
+        switchIsOn = !switchIsOn;
+        digitalWrite(ledPin, LOW);
+        delay(2000);
+        break;
+      }
+        readSwitch();
         digitalWrite(ledPin, HIGH);
         Serial.println("\tLED ON");
+        if (!isSwitchOn()) {
+          switchIsOn = !switchIsOn;
+        }
       }
-    } else {
-      // If the button is not pressed, turn off the LED
-      digitalWrite(ledPin, LOW);
-      Serial.println("\tLED OFF");
-      // Reset the timer when the device goes out of the correct position
-      positionTimerStart = millis();
     }
-  } else {
-    // If the device is not in the correct position, turn off the LED
-    digitalWrite(ledPin, LOW);
-    Serial.println("\tLED OFF");
-    // Reset the timer when the device goes out of the correct position
-    positionTimerStart = millis();
-  }
 
 // //DEBUGGING STATEMENTS
 #ifdef OUTPUT_READABLE_ACCELGYRO
@@ -189,6 +208,20 @@ bool inCorrectPosition() {
   && average[GX] >= -5000 && average[GX] <= 5000 
   && average[GZ] >= -5000 && average[GZ] <= 5000
   && average[AY] >= 5000);
+}
+
+void readSwitch() {
+  switchState = digitalRead(buttonPin);
+}
+
+bool isSwitchOn() { 
+  return (switchState == HIGH);
+}
+
+// Awaitng decison to utilze accelerometer for snapping switch
+bool isAccelDisplaced(int currentAccel) {
+  int displacedAccel;
+  return false; // Change this
 }
 
 // Method for smoothing out raw gyro/accel values and averaging them over a given number of readings
